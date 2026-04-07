@@ -1,0 +1,30 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.6
+python-multipart>=0.0.9
+python-dotenv>=1.0.1
+
+# LangChain core
+langchain>=0.3.7,<0.4.0
+langchain-openai>=0.2.6
+langchain-community>=0.3.7,<0.4.0
+langchain-text-splitters>=0.3.3,<1.0.0
+langchain-experimental>=0.3.4,<0.5.0
+langchain-chroma>=0.1.4
+
+# Vector store
+chromadb>=0.5.18
+
+# File parsing
+pypdf>=4.3.1
+python-docx>=1.1.2
+
+# Reranker
+cohere>=5.11.0
+
+# Anthropic (generation)
+anthropic>=0.40.0
+
+# Utils
+numpy>=2.1.0
+pydantic>=2.9.2
+aiofiles>=24.1.0

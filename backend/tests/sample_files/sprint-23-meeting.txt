@@ -1,0 +1,69 @@
+# Sprint 23 Planning Meeting - Transcript
+Date: March 15, 2025
+Attendees: Sarah (EM), Raj (Backend Lead), Priya (Frontend), Tom (DevOps), Aisha (QA)
+
+---
+
+Sarah: Alright let's kick off Sprint 23 planning. First item - the auth service token refresh issue we saw last week. Raj can you give us an update?
+
+Raj: Yeah so we identified the root cause. The refresh token cookie domain was set to auth.company.com instead of .company.com - missing the leading dot. That meant subdomains like app.company.com couldn't read the cookie, which is why users were getting randomly logged out on the main app but not on the auth portal itself.
+
+Sarah: Got it. What's the fix timeline?
+
+Raj: The fix is literally a one-line config change. I already have a PR up - PR #847. Tom can you prioritize deploying that today?
+
+Tom: On it. I'll get that out before EOD. I'll also add a smoke test to the deployment pipeline that checks cookie behavior across subdomains.
+
+Sarah: Perfect. Aisha, can you write a regression test for this?
+
+Aisha: Already on it. I'll add it to the auth service test suite. Should be done by tomorrow morning.
+
+---
+
+Sarah: Next item - we agreed last sprint to move the token refresh threshold from 5 minutes to 10 minutes before expiry. Priya, has that been implemented on the frontend?
+
+Priya: Yes, that went out in the v2.3.1 release last Tuesday. We're also now doing proactive refresh - if the user is actively using the app, we refresh 10 minutes before expiry. If they're idle, we wait until the next API call fails and then refresh.
+
+Sarah: Good. Any issues since the release?
+
+Priya: One edge case - if the user has multiple tabs open, each tab was independently trying to refresh the token at the same time. We've fixed that with a localStorage lock so only one tab handles the refresh at a time.
+
+---
+
+Sarah: Moving on - Tom, what's the status on the Redis rate limiting migration?
+
+Tom: We migrated the rate limiter from in-memory to Redis last week. The main motivation was that we had 3 auth service replicas and each was maintaining its own in-memory counter, so a user could make 5 failed attempts on each replica - effectively bypassing the rate limit. Now all replicas share the Redis counter so it's 5 attempts total across the cluster.
+
+Sarah: Was there any downtime during migration?
+
+Tom: Zero downtime. We did a shadow rollout - ran both in parallel for 24 hours, compared the counters, then switched over.
+
+---
+
+Raj: One more thing I want to flag - we need to decide on the JWT key rotation schedule. Currently we rotate every 90 days but I want to move to 30 days to reduce the blast radius if a key is compromised.
+
+Sarah: What's the operational overhead?
+
+Raj: Minimal - it's automated. The only risk is downstream services caching the JWKS response for too long. We need to make sure everyone has a max cache TTL of 1 hour on the JWKS endpoint.
+
+Sarah: Let's go with 30 days. Raj, can you send an announcement to all service teams about the JWKS cache TTL requirement?
+
+Raj: Will do. I'll send it to #engineering-announcements today.
+
+---
+
+Sarah: Last item - sprint goals for Sprint 23.
+1. Deploy PR #847 (cookie domain fix) - Tom, today
+2. Regression test for cookie issue - Aisha, tomorrow
+3. JWT key rotation to 30 days - Raj, by end of sprint
+4. JWKS cache TTL announcement - Raj, today
+5. Monitor token refresh error rates after cookie fix deployment
+
+Any blockers anyone wants to flag?
+
+Tom: No blockers from my side.
+Raj: All clear.
+Priya: I'm good.
+Aisha: Same.
+
+Sarah: Great. Let's ship it. Meeting adjourned.
