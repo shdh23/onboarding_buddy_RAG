@@ -31,19 +31,25 @@ def rerank(question: str, docs: list[Document]) -> list[Document]:
         t1 = time.time()
         logger.info(f"  [Rerank] Cohere API call: {t1 - t0:.2f}s")
 
-        MIN_SCORE = 0.3
+        MIN_SCORE = 0.15
+        MIN_CHUNKS = 3
         reranked_docs = []
-        dropped = 0
+        below_threshold = []
         for result in response.results:
             score = round(result.relevance_score, 4)
-            if score < MIN_SCORE:
-                dropped += 1
-                continue
             doc = docs[result.index]
             doc.metadata["rerank_score"] = score
-            reranked_docs.append(doc)
+            if score >= MIN_SCORE:
+                reranked_docs.append(doc)
+            else:
+                below_threshold.append(doc)
 
-        logger.info(f"  [Rerank] Kept {len(reranked_docs)} chunks, dropped {dropped} (score < {MIN_SCORE})")
+        if len(reranked_docs) < MIN_CHUNKS:
+            needed = MIN_CHUNKS - len(reranked_docs)
+            reranked_docs.extend(below_threshold[:needed])
+            logger.info(f"  [Rerank] Added {needed} low-score chunks to meet minimum of {MIN_CHUNKS}")
+
+        logger.info(f"  [Rerank] Kept {len(reranked_docs)} chunks (min_score={MIN_SCORE}, min_chunks={MIN_CHUNKS})")
         for i, doc in enumerate(reranked_docs):
             logger.info(
                 f"    [{i+1}] score={doc.metadata['rerank_score']} "

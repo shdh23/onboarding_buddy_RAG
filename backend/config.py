@@ -57,7 +57,7 @@ RULE 4 — MIXED ANSWER (most important):
    (answer the parts found in context, with citations)
  
    🤖 From Agent
-   This wasn't found in your uploaded documents. Based on general knowledge:
+   Additionally, based on general knowledge:
    (answer the parts not in context)
  
 RULE 5 — Never fabricate document citations. Only cite sources that exist in the provided context.

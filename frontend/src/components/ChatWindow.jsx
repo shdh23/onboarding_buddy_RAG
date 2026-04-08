@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import SourceCard from "./SourceCard"
+import AnswerRenderer from "./AnswerRenderer"
 
 function TypingIndicator() {
   return (
@@ -77,27 +78,6 @@ function AssistantMessage({ message }) {
   const hasDocs    = message.sources?.length > 0
   const hasRewrite = message.rewrittenQuestion
 
-  const renderAnswer = (content) => {
-    const docSection   = content.includes("📄 From Documents")
-    const agentSection = content.includes("🤖 From Agent")
-
-    if (!docSection && !agentSection) {
-      return <p className="text-[14px] text-text leading-[1.6] whitespace-pre-wrap">{content}</p>
-    }
-
-    return content.split(/(📄 From Documents|🤖 From Agent)/).map((part, i) => {
-      if (part === "📄 From Documents") {
-        return <p key={i} style={{ fontSize: "12px", fontWeight: 600, color: "#D97757", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: "8px", marginBottom: "8px" }}>📄 From Documents</p>
-      }
-      if (part === "🤖 From Agent") {
-        return <p key={i} style={{ fontSize: "12px", fontWeight: 600, color: "#D97757", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: "24px", marginBottom: "8px" }}>🤖 From Agent</p>
-      }
-      if (part.trim()) {
-        return <p key={i} style={{ fontSize: "14px", color: "#1A1915", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{part.trim()}</p>
-      }
-      return null
-    })
-  }
 
   return (
     <div className="flex items-start gap-3 animate-fade-slide">
@@ -114,8 +94,8 @@ function AssistantMessage({ message }) {
           </p>
         )}
 
-        <div className="bg-surface rounded-2xl rounded-tl-lg shadow-soft" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "10px" }}>
-          {renderAnswer(message.content)}
+        <div className="bg-surface rounded-2xl rounded-tl-lg shadow-soft" style={{ padding: "16px 20px" }}>
+          <AnswerRenderer content={message.content} />
         </div>
 
         {hasDocs && (

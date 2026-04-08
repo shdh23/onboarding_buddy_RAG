@@ -26,6 +26,19 @@ function BulletList({ items }) {
   )
 }
 
+function NumberedList({ items }) {
+  return (
+    <ol style={{ margin: "6px 0", paddingLeft: "4px", display: "flex", flexDirection: "column", gap: "6px", counterReset: "item" }}>
+      {items.map((item, i) => (
+        <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "#1A1915", lineHeight: 1.6 }}>
+          <span style={{ color: "#D97757", fontWeight: 600, flexShrink: 0, minWidth: "18px" }}>{i + 1}.</span>
+          <span dangerouslySetInnerHTML={{ __html: formatInline(item) }} />
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function SectionLabel({ text }) {
   return (
     <p style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginTop: "16px", marginBottom: "8px", color: "#D97757" }}>
@@ -74,6 +87,16 @@ export default function AnswerRenderer({ content }) {
         i++
       }
       blocks.push(<BulletList key={i} items={items} />)
+      continue
+    }
+
+    if (line.match(/^\d+\.\s+/)) {
+      const items = []
+      while (i < lines.length && lines[i].match(/^\d+\.\s+/)) {
+        items.push(lines[i].replace(/^\d+\.\s+/, "").trim())
+        i++
+      }
+      blocks.push(<NumberedList key={i} items={items} />)
       continue
     }
 
