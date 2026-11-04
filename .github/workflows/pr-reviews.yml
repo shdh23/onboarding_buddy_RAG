@@ -11,5 +11,23 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo "PR #${{ github.event.pull_request.number }} head=${{ github.event.pull_request.head.sha }}"
+      # Download the repo's code onto the runner so the script exists there.
+      # Default checkout = the PR's head commit. We switch to the BASE branch
+      # in Step 8, so a PR can't change the rules or script that review it.
+      - uses: actions/checkout@v4
+
+      # Install Python on the runner.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # requests is used to call the GitHub REST API.
+      - run: pip install requests
+
+      # Run the reviewer. These env vars become os.environ[...] in review.py.
+      - run: python .github/scripts/review.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}                 # auto-created per run; scoped by `permissions:`
+          REPO: ${{ github.repository }}                            # "owner/repo"
+          PR_NUMBER: ${{ github.event.pull_request.number }}        # which PR triggered this run
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}       # latest commit on that PR
