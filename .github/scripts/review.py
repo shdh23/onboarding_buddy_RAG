@@ -6,6 +6,11 @@ to Claude. For now we only list them, to prove the GitHub API call works.
 """
 import os, re, sys
 import requests
+from pathlib import Path
+from collections import defaultdict
+
+# Name of the rules file the bot looks for in each folder.
+RULE_FILE = ".review-rules.md"
 
 # --- Inputs ---------------------------------------------------------------
 # The GitHub Actions workflow passes these in as environment variables.
@@ -61,12 +66,51 @@ def changed_files():
             and f["status"] != "removed"          # deleted files can't violate rules
             and not SKIP.search(f["filename"])]   # drop generated and binary files
 
+def rules_for(path):
+    """Return every rule file that applies to `path`, ordered root first.
+
+    Walks from the file's folder up to the repo root, collecting any
+    .review-rules.md found along the way. Example for
+    "backend/retrieval/reranker.py":
+        checks backend/retrieval/.review-rules.md  -> found
+        checks backend/.review-rules.md            -> not found (yet)
+        checks ./.review-rules.md                  -> found
+    returns (".review-rules.md", "backend/retrieval/.review-rules.md")
+
+    Root comes first and the most specific rules come last, so the model
+    reads general rules before folder-specific ones.
+    The result is a tuple, not a list, so it can be used as a dict key
+    when grouping files.
+    """
+    found, d = [], Path(path).parent
+    while True:
+        rf = d / RULE_FILE
+        if rf.is_file():          # the file exists on disk (the checkout step put the repo here)
+            found.append(str(rf))
+        if d == Path("."):        # reached the repo root; stop climbing
+            break
+        d = d.parent              # move up one folder
+    return tuple(reversed(found))
 
 def main():
-    # Step 2 only prints what we found, to verify the API call works.
-    # Steps 3 onward replace this with rule matching and the Claude review.
+    # Map each unique rule set to the files it covers, e.g.
+    # (".review-rules.md", "backend/retrieval/.review-rules.md") -> [retriever.py, reranker.py]
+    # Files that share a rule set will be reviewed together in one Claude call (Step 5).
+    groups = defaultdict(list)
+
     for f in changed_files():
-        print(f["filename"], f["status"])
+        rp = rules_for(f["filename"])
+        if not rp:
+            # No rule file anywhere above this file, so there is nothing to enforce.
+            # (Won't happen once the root file exists, but keeps the bot safe without one.)
+            continue
+        groups[rp].append(f)
+
+    # Step 3 only prints the mapping so we can verify it.
+    for rp, files in groups.items():
+        print("RULES:", list(rp))
+        for f in files:
+            print("   ", f["filename"])
 
 
 if __name__ == "__main__":
