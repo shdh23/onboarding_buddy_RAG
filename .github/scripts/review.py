@@ -26,6 +26,9 @@ REPO = os.environ["REPO"]            # "owner/repo", e.g. shdh23/onboarding_budd
 PR = os.environ["PR_NUMBER"]         # pull request number, e.g. "1"
 HEAD_SHA = os.environ["HEAD_SHA"]    # latest commit on the PR; used in Step 6 to attach comments
 
+MAX_COMMENTS = 50                  # flood guard
+MARKER = "<!-- rules-bot -->"      # invisible tag for recognizing bot comments (Step 7)
+
 # Model used for reviews. Read from env so you can switch models without a code change.
 MODEL = os.environ.get("REVIEW_MODEL", "claude-sonnet-5-5")
 
@@ -212,6 +215,26 @@ def review_group(client, rule_paths, files):
         x["severity"] = x["severity"].lower()
     return findings
 
+def post_review(findings):
+    """Post all findings as ONE pull request review with inline comments."""
+    comments = [{
+        "path": x["path"],      # file to comment on
+        "line": x["line"],      # new-file line (already validated against the diff)
+        "side": "RIGHT",        # RIGHT = new version of the file
+        "body": f"**[{x['severity']}] {x['rule_id']}**: {x['comment']}\n{MARKER}",
+    } for x in findings[:MAX_COMMENTS]]
+
+    r = requests.post(f"{API}/pulls/{PR}/reviews", headers=GH, timeout=30, json={
+        "commit_id": HEAD_SHA,  # pin comments to the reviewed commit
+        "event": "COMMENT",     # neutral: doesn't approve or block
+        "body": f"Rules review found {len(comments)} issue(s).\n{MARKER}",
+        "comments": comments,
+    })
+    if not r.ok:
+        # 422 = a line isn't in the diff; 403 = token lacks pull-requests: write
+        print(r.status_code, r.text, file=sys.stderr)
+        r.raise_for_status()
+    print(f"Posted review with {len(comments)} comment(s).")
 
 def main():
     # Fail fast with a readable message if the secret didn't reach the script
@@ -250,7 +273,10 @@ def main():
     if DRY_RUN:
         print("DRY_RUN=1, not posting to GitHub.")
         return
-    # Step 6 adds posting to the PR here
+    if not findings:
+        print("No findings. Nothing to post.")
+        return
+    post_review(findings)
 
 
 if __name__ == "__main__":
