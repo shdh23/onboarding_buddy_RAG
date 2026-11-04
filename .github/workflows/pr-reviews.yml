@@ -1,0 +1,50 @@
+name: PR Rules Review
+
+# Run on every PR event that changes what should be reviewed:
+# opened (new PR), synchronize (new push), reopened, ready_for_review (draft -> ready)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# GITHUB_TOKEN permissions: read code, write PR comments. Nothing else.
+permissions:
+  contents: read
+  pull-requests: write
+
+# If several pushes land quickly, cancel the older run for the same PR.
+# Only the newest commit's review matters, and it saves API cost.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Skip draft PRs: work in progress isn't ready for review and would waste
+    # model calls. The ready_for_review trigger above runs it once the PR is ready.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      # Download the repo's code onto the runner so the script and rules exist there.
+      # Still the PR's head commit for now. Part B (after merging) switches to BASE.
+      - uses: actions/checkout@v4
+
+      # Install Python on the runner.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # anthropic = Claude SDK; requests = GitHub API; pytest = unit tests
+      - run: pip install -U anthropic requests pytest
+
+      # Unit tests first; if line numbering or rule resolution breaks, stop here.
+      - run: pytest .github/tests -q
+
+      # Run the reviewer. These env vars become os.environ[...] in review.py.
+      - run: python .github/scripts/review.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # repo secret
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}             # auto-created per run
+          REPO: ${{ github.repository }}                        # "owner/repo"
+          PR_NUMBER: ${{ github.event.pull_request.number }}    # which PR triggered this
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}   # latest commit on the PR
+          REVIEW_MODEL: claude-sonnet-5-5

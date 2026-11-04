@@ -10,6 +10,7 @@ from config import TOP_K_RETRIEVAL, RRF_K
 from langsmith import traceable
 logger = logging.getLogger(__name__)
 
+
 @traceable(name="Vector Search", run_type="retriever")
 def retrieve(question: str) -> list[Document]:
     vector_store = get_vector_store()
