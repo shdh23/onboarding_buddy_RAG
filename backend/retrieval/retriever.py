@@ -10,7 +10,7 @@ from config import TOP_K_RETRIEVAL, RRF_K
 from langsmith import traceable
 logger = logging.getLogger(__name__)
 
-# Touched so PR folder-rules review can match backend/retrieval/.
+# Harmless marker so this PR touches backend/retrieval/ and folder rules apply.
 
 @traceable(name="Vector Search", run_type="retriever")
 def retrieve(question: str) -> list[Document]:
