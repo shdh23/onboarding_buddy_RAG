@@ -21,16 +21,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Install the HTTP client (for GitHub) and pytest (for unit tests)
-      - run: pip install requests pytest
+      # anthropic = Claude SDK; requests = GitHub API; pytest = unit tests
+      - run: pip install anthropic requests pytest
 
-      # Run unit tests first; if numbering or rule resolution breaks, stop here
       - run: pytest .github/tests -q
 
-      # Run the reviewer. These env vars become os.environ[...] in review.py.
       - run: python .github/scripts/review.py
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}                 # auto-created per run; scoped by `permissions:`
-          REPO: ${{ github.repository }}                            # "owner/repo"
-          PR_NUMBER: ${{ github.event.pull_request.number }}        # which PR triggered this run
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}       # latest commit on that PR
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_MODEL: claude-sonnet-5-5
+          DRY_RUN: "1"
