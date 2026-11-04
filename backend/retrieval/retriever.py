@@ -10,6 +10,8 @@ from config import TOP_K_RETRIEVAL, RRF_K
 from langsmith import traceable
 logger = logging.getLogger(__name__)
 
+# Deliberate RET-1 violation to test the reviewer
+TOP_K_OVERRIDE = 7
 
 @traceable(name="Vector Search", run_type="retriever")
 def retrieve(question: str) -> list[Document]:
