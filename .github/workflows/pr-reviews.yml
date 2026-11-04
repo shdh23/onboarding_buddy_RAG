@@ -11,13 +11,21 @@ permissions:
   contents: read
   pull-requests: write
 
+# If several pushes land quickly, cancel the older run for the same PR.
+# Only the newest commit's review matters, and it saves API cost.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
+    # Skip draft PRs: work in progress isn't ready for review and would waste
+    # model calls. The ready_for_review trigger above runs it once the PR is ready.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       # Download the repo's code onto the runner so the script and rules exist there.
-      # Default checkout = the PR's head commit. Step 8 switches to the BASE branch,
-      # so a PR can't change the rules or script that review it.
+      # Still the PR's head commit for now. Part B (after merging) switches to BASE.
       - uses: actions/checkout@v4
 
       # Install Python on the runner.
@@ -25,8 +33,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # anthropic = Claude SDK (-U for structured outputs support);
-      # requests = GitHub API; pytest = unit tests
+      # anthropic = Claude SDK; requests = GitHub API; pytest = unit tests
       - run: pip install -U anthropic requests pytest
 
       # Unit tests first; if line numbering or rule resolution breaks, stop here.
