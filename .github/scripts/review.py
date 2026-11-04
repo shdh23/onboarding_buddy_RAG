@@ -86,31 +86,70 @@ def rules_for(path):
     while True:
         rf = d / RULE_FILE
         if rf.is_file():          # the file exists on disk (the checkout step put the repo here)
-            found.append(str(rf))
+            found.append(rf.as_posix())
         if d == Path("."):        # reached the repo root; stop climbing
             break
         d = d.parent              # move up one folder
     return tuple(reversed(found))
 
+def annotate(patch):
+    """Add new-file line numbers to a unified diff.
+
+    Input (GitHub's patch for one file):
+        @@ -10,3 +10,4 @@
+         ctx
+        -old
+        +new1
+        +new2
+         ctx2
+
+    Output text sent to the model:
+        @@ -10,3 +10,4 @@
+        L10    ctx
+              -old          <- removed line: no number, not commentable
+        L11   +new1
+        L12   +new2
+        L13    ctx2
+
+    Returns (annotated_text, valid_lines), where valid_lines = {10, 11, 12, 13}.
+    valid_lines is used in Step 5 to drop findings on lines GitHub would reject.
+    """
+    out, valid, new = [], set(), 0
+    for line in patch.splitlines():
+        if line.startswith("@@"):
+            # "+10,4" means the new file's hunk starts at line 10
+            new = int(re.search(r"\+(\d+)", line).group(1))
+            out.append(line)
+        elif line.startswith("-"):
+            # Removed line: exists only in the old file, so don't advance the counter
+            out.append(f"      {line}")
+        elif line.startswith(("+", " ")):
+            # Added or unchanged line: exists in the new file at line `new`
+            valid.add(new)
+            out.append(f"L{new:<4} {line}")
+            new += 1
+        # Anything else (e.g. "\ No newline at end of file") is skipped
+    return "\n".join(out), valid
+
 def main():
-    # Map each unique rule set to the files it covers, e.g.
-    # (".review-rules.md", "backend/retrieval/.review-rules.md") -> [retriever.py, reranker.py]
-    # Files that share a rule set will be reviewed together in one Claude call (Step 5).
     groups = defaultdict(list)
+    valid_lines = {}   # filename -> set of commentable line numbers (used in Step 5)
 
     for f in changed_files():
         rp = rules_for(f["filename"])
         if not rp:
-            # No rule file anywhere above this file, so there is nothing to enforce.
-            # (Won't happen once the root file exists, but keeps the bot safe without one.)
             continue
+        # Attach the annotated diff to the file dict so Step 5 can send it to Claude
+        f["annotated"], valid_lines[f["filename"]] = annotate(f["patch"])
         groups[rp].append(f)
 
-    # Step 3 only prints the mapping so we can verify it.
+    # Step 4 prints the annotated diff for one file to verify the numbering
     for rp, files in groups.items():
         print("RULES:", list(rp))
         for f in files:
-            print("   ", f["filename"])
+            print("   ", f["filename"], "valid lines:", sorted(valid_lines[f["filename"]]))
+            print(f["annotated"])
+            print()
 
 
 if __name__ == "__main__":

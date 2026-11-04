@@ -21,8 +21,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      # requests is used to call the GitHub REST API.
-      - run: pip install requests
+      # Install the HTTP client (for GitHub) and pytest (for unit tests)
+      - run: pip install requests pytest
+
+      # Run unit tests first; if numbering or rule resolution breaks, stop here
+      - run: pytest .github/tests -q
 
       # Run the reviewer. These env vars become os.environ[...] in review.py.
       - run: python .github/scripts/review.py
