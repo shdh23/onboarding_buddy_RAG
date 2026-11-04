@@ -41,3 +41,20 @@ def test_rules_inherit_from_root():
 
 def test_rules_root_only_for_other_folders():
     assert review.rules_for("frontend/src/App.jsx") == (".review-rules.md",)
+
+# --- Step 7: dedup ---------------------------------------------------------
+
+def test_finding_key_ignores_line_number():
+    # Same file + same rule on a shifted line is the same issue
+    a = {"path": "a.py", "rule_id": "RET-1", "line": 14}
+    b = {"path": "a.py", "rule_id": "RET-1", "line": 20}
+    assert review.finding_key(a) == review.finding_key(b)
+
+
+def test_existing_keys_only_counts_bot_comments(monkeypatch):
+    fake_comments = [
+        {"path": "a.py", "body": f"**[warning] RET-1**: hardcoded\n{review.MARKER}"},  # bot
+        {"path": "a.py", "body": "**[warning] GEN-1**: a human typed this"},           # human
+    ]
+    monkeypatch.setattr(review, "gh_paginated", lambda url: fake_comments)
+    assert review.existing_keys() == {("a.py", "RET-1")}

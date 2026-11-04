@@ -1,5 +1,5 @@
 """
-PR Rules Reviewer (Step 5: Claude review in dry-run mode).
+PR Rules Reviewer (Step 7: skip comments already posted on earlier pushes).
 
 Flow:
   1. Fetch the PR's changed files from the GitHub API.
@@ -8,7 +8,8 @@ Flow:
   4. Annotate each diff with new-file line numbers (L<n>).
   5. Send each group's rules + diffs to Claude; get findings back as JSON.
   6. Drop findings on lines that aren't in the diff.
-  7. Print findings (DRY_RUN=1) -- Step 6 will post them to the PR.
+  7. Skip findings the bot already posted on an earlier push.
+  8. Post the rest as one PR review with inline comments (or just print if DRY_RUN=1).
 """
 import json
 import os
@@ -25,9 +26,6 @@ import requests
 REPO = os.environ["REPO"]            # "owner/repo", e.g. shdh23/onboarding_buddy_RAG
 PR = os.environ["PR_NUMBER"]         # pull request number, e.g. "1"
 HEAD_SHA = os.environ["HEAD_SHA"]    # latest commit on the PR; used in Step 6 to attach comments
-
-MAX_COMMENTS = 50                  # flood guard
-MARKER = "<!-- rules-bot -->"      # invisible tag for recognizing bot comments (Step 7)
 
 # Model used for reviews. Read from env so you can switch models without a code change.
 MODEL = os.environ.get("REVIEW_MODEL", "claude-sonnet-5-5")
@@ -58,6 +56,13 @@ SKIP = re.compile(r"(package-lock\.json|\.lock$|\.min\.js$|\.(png|jpg|jpeg|svg|i
 
 # Cap on diff text sent per Claude call, to bound cost on very large PRs.
 MAX_DIFF_CHARS = 60_000
+
+# Max inline comments per review, so one bad run can't flood the PR.
+MAX_COMMENTS = 50
+
+# Hidden HTML marker added to every bot comment. Invisible on GitHub,
+# but lets the bot recognize its own comments later (Step 7 dedup).
+MARKER = "<!-- rules-bot -->"
 
 # System prompt: defines the reviewer's job and its limits.
 SYSTEM = """You are a code reviewer that enforces ONLY the rules provided.
@@ -215,26 +220,6 @@ def review_group(client, rule_paths, files):
         x["severity"] = x["severity"].lower()
     return findings
 
-def post_review(findings):
-    """Post all findings as ONE pull request review with inline comments."""
-    comments = [{
-        "path": x["path"],      # file to comment on
-        "line": x["line"],      # new-file line (already validated against the diff)
-        "side": "RIGHT",        # RIGHT = new version of the file
-        "body": f"**[{x['severity']}] {x['rule_id']}**: {x['comment']}\n{MARKER}",
-    } for x in findings[:MAX_COMMENTS]]
-
-    r = requests.post(f"{API}/pulls/{PR}/reviews", headers=GH, timeout=30, json={
-        "commit_id": HEAD_SHA,  # pin comments to the reviewed commit
-        "event": "COMMENT",     # neutral: doesn't approve or block
-        "body": f"Rules review found {len(comments)} issue(s).\n{MARKER}",
-        "comments": comments,
-    })
-    if not r.ok:
-        # 422 = a line isn't in the diff; 403 = token lacks pull-requests: write
-        print(r.status_code, r.text, file=sys.stderr)
-        r.raise_for_status()
-    print(f"Posted review with {len(comments)} comment(s).")
 
 def main():
     # Fail fast with a readable message if the secret didn't reach the script
@@ -273,10 +258,85 @@ def main():
     if DRY_RUN:
         print("DRY_RUN=1, not posting to GitHub.")
         return
+
+    # Step 7: drop findings the bot already posted on an earlier push
+    seen = existing_keys()
+    new = [x for x in findings if finding_key(x) not in seen]
+    skipped = len(findings) - len(new)
+    if skipped:
+        print(f"Skipped {skipped} finding(s) already posted on an earlier push.")
+    findings = new
+
     if not findings:
-        print("No findings. Nothing to post.")
+        print("No new findings. Nothing to post.")
         return
+
     post_review(findings)
+
+
+# --- Step 7: dedup against comments already on the PR ---------------------
+# Pulls a rule ID like "RET-1" out of a bot comment body "**[warning] RET-1**: ..."
+RULE_ID_IN_BODY = re.compile(r"\*\*\[\w+\] ([\w-]+)\*\*")
+
+
+def finding_key(x):
+    """Identity of a finding: same file + same rule = same issue.
+
+    Line number is deliberately NOT part of the key. If a developer adds
+    lines above the violation, its line number shifts, but it's the same
+    issue and shouldn't be re-posted.
+    """
+    return (x["path"], x["rule_id"])
+
+
+def existing_keys():
+    """Return finding keys for every comment this bot has already posted.
+
+    Reads all inline review comments on the PR, keeps only ones carrying
+    our hidden MARKER (so human comments are ignored), and extracts
+    (path, rule_id) from each.
+    """
+    keys = set()
+    for c in gh_paginated(f"{API}/pulls/{PR}/comments"):
+        body = c.get("body", "")
+        if MARKER not in body:
+            continue                          # not a bot comment
+        m = RULE_ID_IN_BODY.search(body)
+        if m:
+            keys.add((c["path"], m.group(1)))
+    return keys
+
+
+# --- Step 6: post findings to the PR --------------------------------------
+def post_review(findings):
+    """Post all findings as ONE pull request review with inline comments.
+
+    One review (instead of one comment per finding) means one notification
+    for the PR author and an atomic post: either all comments land or none.
+    """
+    comments = [{
+        "path": x["path"],          # file to comment on
+        "line": x["line"],          # new-file line number (validated against the diff)
+        "side": "RIGHT",            # RIGHT = new version of the file
+        "body": f"**[{x['severity']}] {x['rule_id']}**: {x['comment']}\n{MARKER}",
+    } for x in findings[:MAX_COMMENTS]]
+
+    r = requests.post(
+        f"{API}/pulls/{PR}/reviews",
+        headers=GH,
+        timeout=30,
+        json={
+            "commit_id": HEAD_SHA,  # pin comments to the commit that was reviewed
+            "event": "COMMENT",     # neutral review: doesn't approve or block the merge
+            "body": f"Rules review found {len(comments)} issue(s).\n{MARKER}",
+            "comments": comments,
+        },
+    )
+    if not r.ok:
+        # 422 usually means a line isn't in the diff; 403 means missing pull-requests: write
+        print(r.status_code, r.text, file=sys.stderr)
+        r.raise_for_status()
+    print(f"Posted review with {len(comments)} comment(s).")
 
 
 if __name__ == "__main__":
