@@ -41,4 +41,3 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}    # which PR triggered this
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}   # latest commit on the PR
           REVIEW_MODEL: claude-sonnet-5-5
-          DRY_RUN: "1"                                          # print only; removed in Step 6
