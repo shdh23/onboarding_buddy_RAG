@@ -1,8 +1,12 @@
 name: PR Rules Review
+
+# Run on every PR event that changes what should be reviewed:
+# opened (new PR), synchronize (new push), reopened, ready_for_review (draft -> ready)
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+# GITHUB_TOKEN permissions: read code, write PR comments. Nothing else.
 permissions:
   contents: read
   pull-requests: write
@@ -11,9 +15,9 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      # Download the repo's code onto the runner so the script exists there.
-      # Default checkout = the PR's head commit. We switch to the BASE branch
-      # in Step 8, so a PR can't change the rules or script that review it.
+      # Download the repo's code onto the runner so the script and rules exist there.
+      # Default checkout = the PR's head commit. Step 8 switches to the BASE branch,
+      # so a PR can't change the rules or script that review it.
       - uses: actions/checkout@v4
 
       # Install Python on the runner.
@@ -21,17 +25,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      # anthropic = Claude SDK; requests = GitHub API; pytest = unit tests
-      - run: pip install anthropic requests pytest
+      # anthropic = Claude SDK (-U for structured outputs support);
+      # requests = GitHub API; pytest = unit tests
+      - run: pip install -U anthropic requests pytest
 
+      # Unit tests first; if line numbering or rule resolution breaks, stop here.
       - run: pytest .github/tests -q
 
+      # Run the reviewer. These env vars become os.environ[...] in review.py.
       - run: python .github/scripts/review.py
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # repo secret
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}             # auto-created per run
+          REPO: ${{ github.repository }}                        # "owner/repo"
+          PR_NUMBER: ${{ github.event.pull_request.number }}    # which PR triggered this
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}   # latest commit on the PR
           REVIEW_MODEL: claude-sonnet-5-5
-          DRY_RUN: "1"
+          DRY_RUN: "1"                                          # print only; removed in Step 6
