@@ -24,9 +24,13 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      # Download the repo's code onto the runner so the script and rules exist there.
-      # Still the PR's head commit for now. Part B (after merging) switches to BASE.
+      # Check out the BASE branch (main), not the PR's code.
+      # The script and .review-rules.md files that review this PR come from main,
+      # so a PR can't weaken a rule or edit the reviewer to approve itself.
+      # The PR's diff still comes from the GitHub API, so changes are still reviewed.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
       # Install Python on the runner.
       - uses: actions/setup-python@v5
